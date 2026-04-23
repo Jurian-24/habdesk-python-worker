@@ -4,8 +4,11 @@ import json
 import string
 import random
 import requests
+import agentql
 from decimal import Decimal
 from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright
+
 
 load_dotenv()
 
@@ -17,6 +20,21 @@ HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json"
 }
+
+def build_agentql_query(schema_dict):
+    query_lines = ["{"]
+    
+    for key, data_type in schema_dict.items():
+        if data_type.lower() == "array":
+            query_lines.append(f"    {key}[]")
+        else:
+            query_lines.append(f"    {key}")
+            
+    query_lines.append("}")
+    
+    return "\n".join(query_lines)
+
+
 
 def mock_string():
     return ''.join(random.choices(string.ascii_letters, k=8))
@@ -35,15 +53,26 @@ generator_map = {
 }
 
 def process_job(job):
-    expected_format = json.loads(job['scraper_job_type']['configuration']['expected_output_format'])
-    mock_data = {}
+    with sync_playwright() as playwright, playwright.chromium.launch(headless=False) as browser:
+        page = agentql.wrap(browser.new_page())
 
-    for key, expected_type in expected_format.items():
-        generate_function = generator_map.get(expected_type.lower(), mock_string)
-        
-        mock_data[key] = generate_function()
+        page.goto(job['scraper_job_type']['target_url'])
 
-    return mock_data
+        expected_format = job['scraper_job_type']['configuration']['expected_output_format']
+
+        if isinstance(expected_format, str):
+            import json
+            expected_format = json.loads(expected_format)
+
+        query = build_agentql_query(expected_format)
+        print(query)
+        try:
+            extracted_data = page.query_data(query)
+
+            return extracted_data
+        except Exception as e:
+            print(e)
+    
 
 def poll_for_jobs():
     print("Looking for jobs with status QUEUED \n")
@@ -51,7 +80,8 @@ def poll_for_jobs():
     while True:
         try:
             response = requests.get(f"{API_URL}/scraper-jobs/next", headers=HEADERS)
-            
+            results = {}
+
             if response.status_code == 200:
                 data = response.json()
                 job = data['job']
