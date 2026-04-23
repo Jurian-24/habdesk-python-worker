@@ -1,6 +1,10 @@
 import os
 import time
+import json
+import string
+import random
 import requests
+from decimal import Decimal
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +17,33 @@ HEADERS = {
     "Accept": "application/json",
     "Content-Type": "application/json"
 }
+
+def mock_string():
+    return ''.join(random.choices(string.ascii_letters, k=8))
+
+def mock_integer():
+    return random.randint(1, 1000)
+
+def mock_array():
+    return [mock_string(), mock_string(), mock_string()]
+
+generator_map = {
+    'string': mock_string,
+    'integer': mock_integer,
+    'int': mock_integer,
+    'array': mock_array
+}
+
+def process_job(job):
+    expected_format = json.loads(job['scraper_job_type']['configuration']['expected_output_format'])
+    mock_data = {}
+
+    for key, expected_type in expected_format.items():
+        generate_function = generator_map.get(expected_type.lower(), mock_string)
+        
+        mock_data[key] = generate_function()
+
+    return mock_data
 
 def poll_for_jobs():
     print("Looking for jobs with status QUEUED \n")
@@ -28,12 +59,19 @@ def poll_for_jobs():
                 
                 print(f"{job_id} status -> PROCESSING")
                 
-               # todo: add the scraping logic
-                time.sleep(3) 
+                job_results = process_job(job)
                 
                 final_status = "COMPLETED" 
                 
-                payload = {"status": final_status}
+                payload = {
+                    "scraper_job_status": final_status,
+                    "scraper_job_results": job_results,
+                    "confidence_score": 90,
+
+                    'scraper_job_id': job_id,
+                    'validation_status': 'PENDING'
+                }
+                
                 update_res = requests.patch(f"{API_URL}/scraper-jobs/{job_id}/status", json=payload, headers=HEADERS)
                 
                 if update_res.status_code == 200:
