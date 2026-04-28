@@ -76,7 +76,6 @@ class JobProcessor:
     
     def process_job(self, job):
         job_id = job['id']
-        prompt = job['scraper_job_type']['configuration']['prompt']
 
         print(f"Scraper job {job_id} is being processed")
 
@@ -136,26 +135,22 @@ class JobProcessor:
                 except Exception as e:
                     print(f"Logging in has failed: {e}")
 
-    def generate_query(self, schema):
-        query_lines = ["{"]
+    # def generate_query(self, schema):
+    #     query_lines = ["{"]
         
-        for key, data_type in schema.items():
-            query_lines.append(f"    {key}[]" if data_type.lower() == "array" else f"    {key}")
-        query_lines.append("}")
+    #     for key, data_type in schema.items():
+    #         query_lines.append(f"    {key}[]" if data_type.lower() == "array" else f"    {key}")
+    #     query_lines.append("}")
 
-        dynamic_query = "\n".join(query_lines)
+    #     dynamic_query = "\n".join(query_lines)
 
-        return dynamic_query
+    #     return dynamic_query
 
     def extract_data(self, page, job):
         schema = job['scraper_job_type']['configuration']['expected_output_format']
         prompt = job['scraper_job_type']['configuration']['prompt']
         if isinstance(schema, str):
             schema = json.loads(schema)
-
-        # dynamic_query = self.generate_query(schema)
-
-        # return page.query_data(dynamic_query)
 
         query = self.create_agentql_query_by_gemini(prompt)
 
@@ -205,8 +200,6 @@ class JobProcessor:
             
             Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks (like ```graphql), formatting, or explanations.
         """
-
-        print("balls")
 
         response = client.models.generate_content(
             model="gemini-2.5-flash-lite",
