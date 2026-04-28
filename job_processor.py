@@ -3,6 +3,8 @@ import time
 import requests
 import json
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 from playwright.sync_api import sync_playwright
 import agentql
 
@@ -59,7 +61,7 @@ class JobProcessor:
             if job:
                 self.process_job(job)
             
-            time.sleep(5)
+            time.sleep(10)
 
     def fetch_next_job(self):
         try:
@@ -74,6 +76,7 @@ class JobProcessor:
     
     def process_job(self, job):
         job_id = job['id']
+        prompt = job['scraper_job_type']['configuration']['prompt']
 
         print(f"Scraper job {job_id} is being processed")
 
@@ -103,6 +106,35 @@ class JobProcessor:
         """
         target_url = job['scraper_job_type']['target_url']
         page.goto(target_url)
+        page.wait_for_load_state("networkidle")
+
+        time.sleep(2)
+
+        auth_payload_str = job.get('authentication_payload')
+
+        if auth_payload_str:
+            auth_payload = json.loads(auth_payload_str)
+            username = auth_payload.get('username')
+            password = auth_payload.get('password')
+
+            if username and password:
+                try:
+                    try:
+                        print('Checking for cookie header')
+                        page.get_by_prompt("Accept cookies button").click()
+                        time.sleep(1)
+                    except:
+                        pass
+
+                    page.get_by_prompt("Username, email or phonenumber input field").fill(username)
+                    page.get_by_prompt("Password input field").fill(password)
+
+                    page.get_by_prompt("Log in, sign in, or submit button").click()
+
+                    page.wait_for_load_state("networkidle")
+                    time.sleep(3)
+                except Exception as e:
+                    print(f"Logging in has failed: {e}")
 
     def generate_query(self, schema):
         query_lines = ["{"]
@@ -117,12 +149,17 @@ class JobProcessor:
 
     def extract_data(self, page, job):
         schema = job['scraper_job_type']['configuration']['expected_output_format']
+        prompt = job['scraper_job_type']['configuration']['prompt']
         if isinstance(schema, str):
             schema = json.loads(schema)
 
-        dynamic_query = self.generate_query(schema)
+        # dynamic_query = self.generate_query(schema)
 
-        return page.query_data(dynamic_query)
+        # return page.query_data(dynamic_query)
+
+        query = self.create_agentql_query_by_gemini(prompt)
+
+        return page.query_data(query)
     
     def report_job_status(self, job_id, status, results=None, confidence=0):
         safe_results = results if results is not None else {}
@@ -143,3 +180,41 @@ class JobProcessor:
             print(f"Scraper job {job_id} is missing payload")
         else:
             print(f"Scraper job {job_id} could not be saved")
+
+    def create_agentql_query_by_gemini(self, prompt): 
+        client = genai.Client()
+    
+        instructions = """
+            You are an expert at writing AgentQL queries for web scraping. 
+            AgentQL uses a GraphQL-like syntax to extract UI elements from a webpage. 
+            
+            CRITICAL RULES:
+            - NEVER use SQL syntax (no SELECT, GROUP BY, FROM, etc.).
+            - Use standard AgentQL dict/list syntax based on the visual layout of a page.
+            
+            Example of valid AgentQL syntax:
+            {
+                monthly_usage {
+                    month_name
+                    days[] {
+                        day_number
+                        usage_mb
+                    }
+                }
+            }
+            
+            Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks (like ```graphql), formatting, or explanations.
+        """
+
+        print("balls")
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=f"Write an AgentQL query to extract: {prompt}",
+            config=types.GenerateContentConfig(
+                system_instruction=instructions,
+                temperature=0.1
+            )
+        )
+        
+        return response.text
