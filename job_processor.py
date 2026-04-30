@@ -7,6 +7,7 @@ from google import genai
 from google.genai import types
 from playwright.sync_api import sync_playwright
 import agentql
+from llm_providers.gemini_provider import GeminiProvider
 
 class JobProcessor:
     def __init__(self):
@@ -18,6 +19,8 @@ class JobProcessor:
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
+
+        self.llm = GeminiProvider()
 
     def calculate_confidence(self, schema, results):
         if not schema or not results:
@@ -92,11 +95,12 @@ class JobProcessor:
                 if isinstance(schema, str):
                     schema = json.loads(schema)
 
-                confidence_score = self.calculate_confidence(schema, extracted_data)
+                confidence_score = self.llm.calculate_confidence(schema, extracted_data)
 
                 self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
 
         except Exception as e:
+            raise e
             print(f"{job_id}: {e}")
             self.report_job_status(job_id, "FAILED", None, 0)
     
@@ -136,24 +140,13 @@ class JobProcessor:
                 except Exception as e:
                     print(f"Logging in has failed: {e}")
 
-    # def generate_query(self, schema):
-    #     query_lines = ["{"]
-        
-    #     for key, data_type in schema.items():
-    #         query_lines.append(f"    {key}[]" if data_type.lower() == "array" else f"    {key}")
-    #     query_lines.append("}")
-
-    #     dynamic_query = "\n".join(query_lines)
-
-    #     return dynamic_query
-
     def extract_data(self, page, job):
         schema = job['scraper_job_type']['configuration']['expected_output_format']
         prompt = job['scraper_job_type']['configuration']['prompt']
         if isinstance(schema, str):
             schema = json.loads(schema)
 
-        query = self.create_agentql_query_by_gemini(prompt)
+        query = self.llm.generate_query(prompt, schema)
 
         return page.query_data(query)
     
@@ -177,59 +170,3 @@ class JobProcessor:
             print(json.dumps(response.json(), indent=4))
         else:
             print(f"Scraper job {job_id} could not be saved")
-
-    def create_agentql_query_by_gemini(self, prompt, max_retries=3): 
-        client = genai.Client()
-    
-        instructions = """
-            You are an expert at writing AgentQL queries for web scraping. 
-            AgentQL uses a GraphQL-like syntax to extract UI elements from a webpage. 
-            
-            CRITICAL RULES:
-            - NEVER use SQL syntax (no SELECT, GROUP BY, FROM, etc.).
-            - Use standard AgentQL dict/list syntax based on the visual layout of a page.
-            
-            Example of valid AgentQL syntax:
-            {
-                monthly_usage {
-                    month_name
-                    days[] {
-                        day_number
-                        usage_mb
-                    }
-                }
-            }
-            
-            Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks (like ```graphql), formatting, or explanations.
-        """
-
-        for attempt in range(max_retries):
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash-lite",
-                    contents=f"Write an AgentQL query to extract: {prompt}",
-                    config=types.GenerateContentConfig(
-                        system_instruction=instructions,
-                        temperature=0.1
-                    )
-                )
-                
-                query = response.text.strip()
-                if query.startswith("```"):
-                    query = query.split("\n", 1)[1].rsplit("\n", 1)[0]
-                    
-                return query
-
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                if "429" in error_str or "quota" in error_str or "503" in error_str or "overloaded" in error_str:
-                    wait_time = 2 ** attempt 
-                    print(f"Gemini overloaded (retry {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    print(f"Gemini error: {e}")
-                    break
-                    
-        print("Gemini fails after several retry attempts")
-        return None
