@@ -69,7 +69,8 @@ class JobProcessor:
             if response.status_code == 200:
                 return response.json()['job']
             else:
-                print(response)
+                print(json.dumps(response.json(), indent=4))
+
         except requests.exceptions.ConnectionError:
             print("Laravel cannot be reached")
         return None
@@ -173,10 +174,11 @@ class JobProcessor:
             print(f"Scraper job {job_id} saved with status {status}")
         elif response.status_code == 422:
             print(f"Scraper job {job_id} is missing payload")
+            print(json.dumps(response.json(), indent=4))
         else:
             print(f"Scraper job {job_id} could not be saved")
 
-    def create_agentql_query_by_gemini(self, prompt): 
+    def create_agentql_query_by_gemini(self, prompt, max_retries=3): 
         client = genai.Client()
     
         instructions = """
@@ -201,13 +203,33 @@ class JobProcessor:
             Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks (like ```graphql), formatting, or explanations.
         """
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=f"Write an AgentQL query to extract: {prompt}",
-            config=types.GenerateContentConfig(
-                system_instruction=instructions,
-                temperature=0.1
-            )
-        )
-        
-        return response.text
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash-lite",
+                    contents=f"Write an AgentQL query to extract: {prompt}",
+                    config=types.GenerateContentConfig(
+                        system_instruction=instructions,
+                        temperature=0.1
+                    )
+                )
+                
+                query = response.text.strip()
+                if query.startswith("```"):
+                    query = query.split("\n", 1)[1].rsplit("\n", 1)[0]
+                    
+                return query
+
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                if "429" in error_str or "quota" in error_str or "503" in error_str or "overloaded" in error_str:
+                    wait_time = 2 ** attempt 
+                    print(f"Gemini overloaded (retry {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    print(f"Gemini error: {e}")
+                    break
+                    
+        print("Gemini fails after several retry attempts")
+        return None
