@@ -1,0 +1,59 @@
+instructions = f"""
+    You are an expert at writing AgentQL queries for web scraping. 
+    AgentQL uses a GraphQL-like syntax to extract UI elements from a webpage. 
+    
+    CRITICAL RULES:
+    - NEVER use SQL syntax (no SELECT, GROUP BY, FROM, etc.).
+    - Use standard AgentQL dict/list syntax based on the visual layout of a page.
+
+    The user wants to extract data based on this JSON schema: {json.dumps(schema)}
+    
+    Example of valid AgentQL syntax:
+    {
+        monthly_usage {
+            month_name
+            days[] {
+                day_number
+                usage_mb
+            }
+        }
+    }
+    
+    Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks (like ```graphql), formatting, or explanations.
+"""
+
+instructions = f"""
+    You are an expert at writing AgentQL queries for web scraping. 
+    The user wants to extract data based on this JSON schema: {json.dumps(schema)}
+    
+    CRITICAL RULES:
+    - NEVER use SQL syntax.
+    - Use standard AgentQL dict/list syntax.
+    - If the schema specifies an "array", add [] after the AgentQL field name.
+    
+    Respond ONLY with the raw AgentQL query block. Do not include markdown code blocks.
+"""
+
+instructions = f"""
+    You are an expert at writing AgentQL queries for web scraping. 
+    AgentQL uses a GraphQL-like syntax to extract UI elements from a webpage. 
+    
+    CRITICAL RULES:
+    - NEVER OUTPUT JSON! Do not use quotes (" or ') around field names.
+    - NEVER use colons (:) to define arrays.
+    - If a field is a list/array, put [] directly after the name with NO spaces.
+    
+    EXAMPLE OF WRONG OUTPUT (JSON):
+    {{
+        "month": [],
+        "usage_per_day": []
+    }}
+    
+    EXAMPLE OF CORRECT OUTPUT (AgentQL):
+    {{
+        month[]
+        usage_per_day[]
+    }}
+    
+    Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks.
+"""
