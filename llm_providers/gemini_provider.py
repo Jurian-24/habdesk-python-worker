@@ -36,7 +36,7 @@ class GeminiProvider(BaseLLM):
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash-lite",
+                    model="gemini-3-flash-preview",
                     contents=f"Write an AgentQL query to extract: {prompt}",
                     config=types.GenerateContentConfig(
                         system_instruction=instructions,

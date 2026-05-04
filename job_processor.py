@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import json
+import base64
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -63,6 +64,7 @@ class JobProcessor:
 
             if job:
                 self.process_job(job)
+                # self.test_setting(job)
             
             time.sleep(10)
 
@@ -86,22 +88,53 @@ class JobProcessor:
         try:
             with sync_playwright() as playwright, playwright.chromium.launch(headless=False) as browser:
                 page = agentql.wrap(browser.new_page())
-                
-                self.run_job_steps(page, job)
-                
-                extracted_data = self.extract_data(page, job)
 
-                schema = job['scraper_job_type']['configuration']['expected_output_format']
-                if isinstance(schema, str):
-                    schema = json.loads(schema)
+                try:
+                    self.run_job_steps(page, job)
+                    
+                    extracted_data = self.extract_data(page, job)
 
-                confidence_score = self.llm.calculate_confidence(schema, extracted_data)
+                    schema = job['scraper_job_type']['configuration']['expected_output_format']
+                    if isinstance(schema, str):
+                        schema = json.loads(schema)
 
-                self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
+                    confidence_score = self.llm.calculate_confidence(schema, extracted_data)
+
+                    if confidence_score == 0:
+                        raise Exception(f"Confidence score is 0. Page probably doesnt exist")
+
+                    self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
+                except Exception as inner_e:
+                    print(f"Something went wrong while trying to scrape the site: {inner_e}")
+
+                    screenshot_base64 = None
+
+                    resilience = job.get('scraper_job_type', {}).get('resilience_settings', [])
+
+                    print(json.dumps(resilience))
+
+                    if isinstance(resilience, str):
+                        resilience = json.loads(resilience)
+
+                    wants_screenshot = any(
+                        setting.get('definition', {}).get('key') == 'SCREENSHOT_ON_FAILURE' 
+                        and setting.get('active') in [True, 'true', 1, '1']
+                        for setting in resilience
+                    )
+
+                    if wants_screenshot: 
+                        try:
+                            screenshot_bytes = page.screenshot(full_page=True)
+
+                            screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                            print(screenshot_base64)
+                        except Exception as pic_e:
+                            print(f"Not able to make a screenshot of the page: {pic_e}")
+                    
+                    self.report_job_status(job_id, "FAILED", None, 0, screenshot_base64)
 
         except Exception as e:
-            raise e
-            print(f"{job_id}: {e}")
+            print(f"Fail outside browser: {job_id}: {e}")
             self.report_job_status(job_id, "FAILED", None, 0)
     
     def run_job_steps(self, page, job):
@@ -150,16 +183,20 @@ class JobProcessor:
 
         return page.query_data(query)
     
-    def report_job_status(self, job_id, status, results=None, confidence=0):
-        safe_results = results if results is not None else {}
+    def report_job_status(self, job_id, status, results=None, confidence=0, screenshot=None):
+        safe_results = results if results is not None else []
 
         payload = {
             "scraper_job_id": job_id,
             "scraper_job_status": status,
             "scraper_job_results": safe_results,
             "confidence_score": confidence,
-            "validation_status": "PENDING"
+            "validation_status": "PENDING",
+            'error_screenshot': screenshot
         }
+
+        if screenshot:
+            payload["error_screenshot"] = screenshot
 
         response = requests.patch(f"{self.api_url}/scraper-jobs/{job_id}/status", json=payload, headers=self.headers)
 
@@ -170,3 +207,30 @@ class JobProcessor:
             print(json.dumps(response.json(), indent=4))
         else:
             print(f"Scraper job {job_id} could not be saved")
+
+    def test_setting(self, job):
+        screenshot_base64 = None
+
+        resilience = job.get('scraper_job_type', {}).get('resilience_settings', [])
+
+        print(json.dumps(resilience))
+
+        if isinstance(resilience, str):
+            resilience = json.loads(resilience)
+
+        wants_screenshot = any(
+            setting.get('definition', {}).get('key') == 'SCREENSHOT_ON_FAILURE' 
+            and setting.get('active') in [True, 'true', 1, '1']
+            for setting in resilience
+        )
+
+        if wants_screenshot: 
+            try:
+                print('maakt screenshot')
+                # screenshot_bytes = page.screenshot(full_page=True)
+
+                # screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+            except Exception as pic_e:
+                print(f"Not able to make a screenshot of the page: {pic_e}")
+        
+        # self.report_job_status(job_id, "FAILED", None, 0, screenshot_base64)
