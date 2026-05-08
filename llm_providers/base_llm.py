@@ -7,6 +7,10 @@ class BaseLLM(ABC):
     def generate_query(self, prompt: str, schema: dict, max_retries: int = 3) -> str:
         pass
 
+    @abstractmethod
+    def optimize_failed_prompt(self, old_prompt: str, target_schema: dict, human_feedback: str, failed_output: str):
+        pass
+
 
     def calculate_confidence(self, schema: dict, results: dict) -> int:
         if not schema or not results:

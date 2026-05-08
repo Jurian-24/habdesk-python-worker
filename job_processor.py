@@ -9,6 +9,7 @@ from google.genai import types
 from playwright.sync_api import sync_playwright
 import agentql
 from llm_providers.gemini_provider import GeminiProvider
+from feedback_processor import FeedbackProcessor
 
 class JobProcessor:
     def __init__(self):
@@ -64,6 +65,7 @@ class JobProcessor:
 
             if job:
                 self.process_job(job)
+                
                 # self.test_setting(job)
             
             time.sleep(10)
@@ -111,8 +113,6 @@ class JobProcessor:
 
                     resilience = job.get('scraper_job_type', {}).get('resilience_settings', [])
 
-                    print(json.dumps(resilience))
-
                     if isinstance(resilience, str):
                         resilience = json.loads(resilience)
 
@@ -127,7 +127,6 @@ class JobProcessor:
                             screenshot_bytes = page.screenshot(full_page=True)
 
                             screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-                            print(screenshot_base64)
                         except Exception as pic_e:
                             print(f"Not able to make a screenshot of the page: {pic_e}")
                     
