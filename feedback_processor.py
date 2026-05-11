@@ -4,8 +4,6 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-# Importeer je database/API connectie hier
-
 class FeedbackProcessor:
     def __init__(self):
         load_dotenv()

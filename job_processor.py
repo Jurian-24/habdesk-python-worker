@@ -152,25 +152,39 @@ class JobProcessor:
             auth_payload = json.loads(auth_payload_str)
             username = auth_payload.get('username')
             password = auth_payload.get('password')
-
-            if username and password:
+            try: 
+                print('Checking for the cookie banner')
                 try:
-                    try:
-                        print('Checking for cookie header')
-                        page.get_by_prompt("Accept cookies button").click()
-                        time.sleep(1)
-                    except:
-                        pass
+                    cookie_elements = page.query_elements("{ accept_cookies_button }")
+                    if cookie_elements.accept_cookies_button:
+                        cookie_elements.accept_cookies_button.click()
+                        page.wait_for_timeout(2000) 
+                except Exception as e:
+                    print("No cookie banner found. Continueing...")
 
-                    page.get_by_prompt("Username, email or phonenumber input field").fill(username)
-                    page.get_by_prompt("Password input field").fill(password)
+                login_query = """
+                    {
+                        username_input
+                        password_input
+                        login_submit_button
+                    }
+                """
 
-                    page.get_by_prompt("Log in, sign in, or submit button").click()
+                print("Fetching the login elements")
+                elements = page.query_elements(login_query)
+                
+                if elements.username_input and elements.password_input:
+                    elements.username_input.fill(username)
+                    elements.password_input.fill(password)
+                    elements.login_submit_button.click()
 
                     page.wait_for_load_state("networkidle")
                     time.sleep(3)
-                except Exception as e:
-                    print(f"Logging in has failed: {e}")
+                else:
+                    print("AgentQL cannot find the login fields")
+
+            except Exception as e:
+                print(f"Logging in has failed: {e}")
 
     def extract_data(self, page, job):
         schema = job['scraper_job_type']['configuration']['expected_output_format']
