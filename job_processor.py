@@ -9,6 +9,7 @@ from google.genai import types
 from playwright.sync_api import sync_playwright
 import agentql
 from llm_providers.gemini_provider import GeminiProvider
+from llm_providers.openai_provider import OpenAIProvider
 from feedback_processor import FeedbackProcessor
 
 class JobProcessor:
@@ -102,8 +103,8 @@ class JobProcessor:
 
                     confidence_score = self.llm.calculate_confidence(schema, extracted_data)
 
-                    if confidence_score == 0:
-                        raise Exception(f"Confidence score is 0. Page probably doesnt exist")
+                    # if confidence_score == 0:
+                    #     raise Exception(f"Confidence score is 0. Page probably doesnt exist")
 
                     self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
                 except Exception as inner_e:

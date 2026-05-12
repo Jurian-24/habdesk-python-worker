@@ -5,6 +5,8 @@ import json
 from dotenv import load_dotenv
 from feedback_processor import FeedbackProcessor
 
+from llm_providers.openai_provider import OpenAIProvider
+
 class FeedbackWorker:
     def __init__(self):
         load_dotenv()
@@ -14,7 +16,7 @@ class FeedbackWorker:
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
-        self.optimizer = FeedbackProcessor()
+        self.optimizer = OpenAIProvider()
 
     def start_polling(self):
         print("Waiting for feedback")
@@ -26,7 +28,7 @@ class FeedbackWorker:
                 self.process_in_bulk(jobs_to_process)
                 time.sleep(10)
             else:
-                time.sleep(30) 
+                time.sleep(10) 
 
     def fetch_rejected_jobs(self):
         try:
@@ -42,12 +44,17 @@ class FeedbackWorker:
 
         try:
             for job in jobs:
+                print(f"Starting job with type {job['scraper_job_type_id']}")
                 job_type_id = job['scraper_job_type_id']
                 feedback_id = job['feedback_id']
                 
                 old_prompt = job['old_prompt']
                 human_feedback = job['reason']
                 
+                if job['results_validation_status'] == 'HUMAN_APPROVED':
+                    print("This job is good. No need to improve the prompt")
+                    continue
+
                 new_prompt = self.optimizer.create_better_prompt(old_prompt, human_feedback)
                 
                 if new_prompt:
@@ -63,7 +70,6 @@ class FeedbackWorker:
                         "new_prompt": new_prompt
                     }
 
-
                     self.send_prompt_to_laravel(payload)
                 else:
                     print("Gemini couldnt write a prompt")
@@ -71,12 +77,12 @@ class FeedbackWorker:
         except Exception as e:
             print(e)
 
-        finally:
-            if successful_updates:
-                print(f"📦 Bulk versturen van {len(successful_updates)} updates naar Laravel...")
-                self.send_bulk_to_laravel(successful_updates)
-            else:
-                print("Geen succesvolle updates om te versturen.")
+        # finally:
+        #     if successful_updates:
+        #         print(f"📦 Bulk versturen van {len(successful_updates)} updates naar Laravel...")
+        #         self.send_bulk_to_laravel(successful_updates)
+        #     else:
+        #         print("Geen succesvolle updates om te versturen.")
 
     def send_bulk_to_laravel(self, batch_payload):
         try:
