@@ -35,9 +35,23 @@ class GeminiProvider(BaseLLM):
 
         for attempt in range(max_retries):
             try:
+                dynamic_prompt = f"""
+                    You need to write an AgentQL query. 
+                    
+                    PRIMARY INSTRUCTION (The absolute source of truth):
+                    {prompt}
+                    
+                    SUGGESTED TARGET SCHEMA (Format guidelines):
+                    {json.dumps(schema)}
+                    
+                    RULES:
+                    1. Your ultimate goal is to fulfill the PRIMARY INSTRUCTION. 
+                    2. Try to map your extraction to the keys in the SUGGESTED TARGET SCHEMA if they match the instruction.
+                    3. If the schema is completely irrelevant to the instruction (e.g. instruction asks for 'title' but schema has 'month'), IGNORE THE SCHEMA and use highly descriptive field names that AgentQL can use to find the actual elements requested in the instruction.
+                """
                 response = self.client.models.generate_content(
                     model="gemini-3-flash-preview",
-                    contents=f"Write an AgentQL query to extract: {prompt}",
+                    contents=dynamic_prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=instructions,
                         temperature=0.1
@@ -49,7 +63,10 @@ class GeminiProvider(BaseLLM):
                     query = query.split("\n", 1)[1].rsplit("\n", 1)[0]
                 
                 query = query.strip('\'"')
-
+                
+                query = query.replace('\n', ' ').replace('\r', '')
+                query = " ".join(query.split())
+                
                 return query
 
             except Exception as e:
@@ -66,3 +83,13 @@ class GeminiProvider(BaseLLM):
         print("Gemini fails after several retry attempts")
         return None
 
+    def optimize_failed_prompt(self, old_prompt, target_schema, human_feedback, failed_output):
+        instructions = """
+            You are a Master Prompt Engineer for an AgentQL web scraping system.
+            Your job is to rewrite a scraping prompt that failed, based on human feedback.
+            
+            RULES:
+            1. ONLY output the new, rewritten prompt. No explanations, no markdown blocks, no intro text.
+            2. Make the new prompt highly specific so it strictly extracts the data requested.
+            3. Ensure the new prompt considers the human feedback explicitly to avoid repeating the mistake.
+        """

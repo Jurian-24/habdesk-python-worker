@@ -57,3 +57,32 @@ instructions = f"""
     
     Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks.
 """
+
+nadat de LLM query vaak faalde heb ik deze toegevoegd in de loop:
+dynamic_prompt = f"""
+    Write an AgentQL query to extract the following: {prompt}
+    
+    CRITICAL REQUIREMENT: 
+    You MUST use the EXACT field names provided in this target schema. 
+    Do not invent your own field names!
+    
+    TARGET SCHEMA:
+    {json.dumps(schema)}
+"""
+bovenstaande prompt resulteerde in de onderstaande issue^
+
+issue dat er nie gelusiterd wordt naar de prompt maar enkel naar het schema:
+dynamic_prompt = f"""
+    You need to write an AgentQL query. 
+    
+    PRIMARY INSTRUCTION (The absolute source of truth):
+    {prompt}
+    
+    SUGGESTED TARGET SCHEMA (Format guidelines):
+    {json.dumps(schema)}
+    
+    RULES:
+    1. Your ultimate goal is to fulfill the PRIMARY INSTRUCTION. 
+    2. Try to map your extraction to the keys in the SUGGESTED TARGET SCHEMA if they match the instruction.
+    3. If the schema is completely irrelevant to the instruction (e.g. instruction asks for 'title' but schema has 'month'), IGNORE THE SCHEMA and use highly descriptive field names that AgentQL can use to find the actual elements requested in the instruction.
+"""

@@ -9,6 +9,8 @@ from google.genai import types
 from playwright.sync_api import sync_playwright
 import agentql
 from llm_providers.gemini_provider import GeminiProvider
+from llm_providers.openai_provider import OpenAIProvider
+from feedback_processor import FeedbackProcessor
 
 class JobProcessor:
     def __init__(self):
@@ -64,6 +66,7 @@ class JobProcessor:
 
             if job:
                 self.process_job(job)
+                
                 # self.test_setting(job)
             
             time.sleep(10)
@@ -100,8 +103,8 @@ class JobProcessor:
 
                     confidence_score = self.llm.calculate_confidence(schema, extracted_data)
 
-                    if confidence_score == 0:
-                        raise Exception(f"Confidence score is 0. Page probably doesnt exist")
+                    # if confidence_score == 0:
+                    #     raise Exception(f"Confidence score is 0. Page probably doesnt exist")
 
                     self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
                 except Exception as inner_e:
@@ -110,8 +113,6 @@ class JobProcessor:
                     screenshot_base64 = None
 
                     resilience = job.get('scraper_job_type', {}).get('resilience_settings', [])
-
-                    print(json.dumps(resilience))
 
                     if isinstance(resilience, str):
                         resilience = json.loads(resilience)
@@ -127,7 +128,6 @@ class JobProcessor:
                             screenshot_bytes = page.screenshot(full_page=True)
 
                             screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-                            print(screenshot_base64)
                         except Exception as pic_e:
                             print(f"Not able to make a screenshot of the page: {pic_e}")
                     
@@ -153,25 +153,39 @@ class JobProcessor:
             auth_payload = json.loads(auth_payload_str)
             username = auth_payload.get('username')
             password = auth_payload.get('password')
-
-            if username and password:
+            try: 
+                print('Checking for the cookie banner')
                 try:
-                    try:
-                        print('Checking for cookie header')
-                        page.get_by_prompt("Accept cookies button").click()
-                        time.sleep(1)
-                    except:
-                        pass
+                    cookie_elements = page.query_elements("{ accept_cookies_button }")
+                    if cookie_elements.accept_cookies_button:
+                        cookie_elements.accept_cookies_button.click()
+                        page.wait_for_timeout(2000) 
+                except Exception as e:
+                    print("No cookie banner found. Continueing...")
 
-                    page.get_by_prompt("Username, email or phonenumber input field").fill(username)
-                    page.get_by_prompt("Password input field").fill(password)
+                login_query = """
+                    {
+                        username_input
+                        password_input
+                        login_submit_button
+                    }
+                """
 
-                    page.get_by_prompt("Log in, sign in, or submit button").click()
+                print("Fetching the login elements")
+                elements = page.query_elements(login_query)
+                
+                if elements.username_input and elements.password_input:
+                    elements.username_input.fill(username)
+                    elements.password_input.fill(password)
+                    elements.login_submit_button.click()
 
                     page.wait_for_load_state("networkidle")
                     time.sleep(3)
-                except Exception as e:
-                    print(f"Logging in has failed: {e}")
+                else:
+                    print("AgentQL cannot find the login fields")
+
+            except Exception as e:
+                print(f"Logging in has failed: {e}")
 
     def extract_data(self, page, job):
         schema = job['scraper_job_type']['configuration']['expected_output_format']
