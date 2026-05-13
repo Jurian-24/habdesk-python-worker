@@ -79,7 +79,6 @@ class FeedbackWorker:
 
         # finally:
         #     if successful_updates:
-        #         print(f"📦 Bulk versturen van {len(successful_updates)} updates naar Laravel...")
         #         self.send_bulk_to_laravel(successful_updates)
         #     else:
         #         print("Geen succesvolle updates om te versturen.")
