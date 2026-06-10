@@ -3,7 +3,6 @@ import time
 import requests
 import json
 from dotenv import load_dotenv
-from feedback_processor import FeedbackProcessor
 
 from llm_providers.openai_provider import OpenAIProvider
 
@@ -36,7 +35,7 @@ class FeedbackWorker:
             if response.status_code == 200:
                 return response.json().get('data', [])
         except requests.exceptions.ConnectionError:
-            print("Laravel onbereikbaar...")
+            print("Laravel is not reachable. Is it running?")
         return []
 
     def process_in_bulk(self, jobs):
@@ -123,7 +122,7 @@ class FeedbackWorker:
                 return False
 
         except requests.exceptions.ConnectionError:
-            print("🚨 FATAL: Kan Laravel niet bereiken. Staat Laravel Sail wel aan?")
+            print("Couldnt reach Laravel. Is it running?")
             return False
         except Exception as e:
             print(e)

@@ -34,10 +34,10 @@ class FeedbackProcessor:
 
         Please write the NEW PROMPT.
         """
-
+        
         try:
             response = self.client.models.generate_content(
-                model="gemini-3-flash-preview",
+                model="gemini-2.5-flash",
                 contents=dynamic_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=instructions,
@@ -66,31 +66,28 @@ class FeedbackProcessor:
 
 
 if __name__ == "__main__":
-    print("🚀 Booting up Meta-AI Prompt Optimizer...")
     
-    # 1. Start de class
     optimizer = FeedbackProcessor()
     
-    # 2. Fake de data (jouw exacte voorbeeld!)
     test_old_prompt = "Create a agentql that fetches the usage per month"
-    test_feedback = "De maanden en dagen zijn aparte arrays. De maanden moeten de keys zijn. De value is een object met een key value pair -> de dag en het verbruik"
+    test_feedback = "The month and year were missing, so we have no idea which month the usage data belongs to. Also, we need the usage in kWh, not in Euros."
     
     print("\n" + "="*50)
-    print(f"🔥 OUDE PROMPT: {test_old_prompt}")
-    print(f"💬 FEEDBACK:    {test_feedback}")
+    print(f"Old prompt: {test_old_prompt}")
+    print(f"Feedback:    {test_feedback}")
     print("="*50 + "\n")
     
-    print("🧠 Gemini is aan het nadenken over een betere prompt...\n")
+    print("Creating a better prompt\n")
     
     # 3. Vuur hem af!
     result = optimizer.create_better_prompt(test_old_prompt, test_feedback)
     
     # 4. Bewonder het resultaat
     if result:
-        print("✨ HET RESULTAAT (De nieuwe Master-Prompt):")
+        print("The new prompt:")
         print("-" * 50)
         print(result)
         print("-" * 50)
-        print("\nSiuuu! Test geslaagd. Je kunt dit nu in de database pompen.")
+        print("\nStore in the database")
     else:
-        print("❌ Ah shit, de AI is gecrasht of weigerde te antwoorden.")
+        print("Something went wrong with the LLM")

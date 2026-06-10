@@ -7,4 +7,3 @@ load_dotenv()
 if __name__ == "__main__":
     worker = JobProcessor()
     worker.start_worker()
-    

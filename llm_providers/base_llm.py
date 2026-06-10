@@ -2,6 +2,29 @@ import json
 from abc import ABC, abstractmethod
 
 class BaseLLM(ABC):
+    BASE_INSTRUCTIONS = f"""
+        You are an expert at writing AgentQL queries for web scraping. 
+        AgentQL uses a GraphQL-like syntax to extract UI elements from a webpage. 
+        
+        CRITICAL RULES:
+        - NEVER OUTPUT JSON! Do not use quotes (" or ') around field names.
+        - NEVER use colons (:) to define arrays.
+        - If a field is a list/array, put [] directly after the name with NO spaces.
+        
+        EXAMPLE OF WRONG OUTPUT (JSON):
+        {{
+            "month": [],
+            "usage_per_day": []
+        }}
+        
+        EXAMPLE OF CORRECT OUTPUT (AgentQL):
+        {{
+            month[]
+            usage_per_day[]
+        }}
+        
+        Respond ONLY with the raw AgentQL query block based on the user's intent. Do not include markdown code blocks.
+    """
     
     @abstractmethod
     def generate_query(self, prompt: str, schema: dict, max_retries: int = 3) -> str:

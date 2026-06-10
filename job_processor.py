@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 import agentql
 from llm_providers.gemini_provider import GeminiProvider
 from llm_providers.openai_provider import OpenAIProvider
-from feedback_processor import FeedbackProcessor
+from llm_providers.ollama_provider import OllamaProvider
 
 class JobProcessor:
     def __init__(self):
@@ -23,7 +23,7 @@ class JobProcessor:
             "Content-Type": "application/json"
         }
 
-        self.llm = GeminiProvider()
+        self.llm = OllamaProvider()
 
     def calculate_confidence(self, schema, results):
         if not schema or not results:
@@ -86,16 +86,32 @@ class JobProcessor:
     def process_job(self, job):
         job_id = job['id']
 
-        print(f"Scraper job {job_id} is being processed")
+        exp_meta = job.get('experiment', {
+            'code': 'UNKNOWN',
+            'workload': 'UNKNOWN',
+            'context': 'No historical feedback available yet'
+        })
+
+        # print(f"Scraper job {job_id} is being processed")
+        print(f"Scraper job {job_id} is being processed under Experiment {exp_meta['code']}")
 
         try:
+            start_time = time.time()
+
             with sync_playwright() as playwright, playwright.chromium.launch(headless=False) as browser:
                 page = agentql.wrap(browser.new_page())
 
                 try:
                     self.run_job_steps(page, job)
+
+                    # start timing for the response
+                    start_time = time.time()
                     
-                    extracted_data = self.extract_data(page, job)
+                    end_time = time.time()
+                    response_time_ms = int(end_time - start_time * 1000)
+
+                    # start the extraction with agentql
+                    extracted_data, token_info = self.extract_data(page, job, exp_meta['context'])
 
                     schema = job['scraper_job_type']['configuration']['expected_output_format']
                     if isinstance(schema, str):
@@ -103,10 +119,26 @@ class JobProcessor:
 
                     confidence_score = self.llm.calculate_confidence(schema, extracted_data)
 
+                    validation_status = "APPROVED" if confidence_score > 70 else "REJECTED"
                     # if confidence_score == 0:
                     #     raise Exception(f"Confidence score is 0. Page probably doesnt exist")
-
+                    self.send_metrics_to_laravel(
+                        job_id=job_id,
+                        exp_meta=exp_meta,
+                        res_time=response_time_ms,
+                        tokens=token_info,
+                        status=validation_status
+                    )
                     self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
+
+                    self.log_experiment_to_laravel(
+                        exp_code=exp_meta['code'],
+                        workload=exp_meta['workload'],
+                        job_id=job_id,
+                        res_time=response_time_ms,
+                        tokens=token_info,
+                        status=validation_status
+                    )
                 except Exception as inner_e:
                     print(f"Something went wrong while trying to scrape the site: {inner_e}")
 
@@ -187,15 +219,32 @@ class JobProcessor:
             except Exception as e:
                 print(f"Logging in has failed: {e}")
 
-    def extract_data(self, page, job):
+    def extract_data(self, page, job, historical_context):
         schema = job['scraper_job_type']['configuration']['expected_output_format']
         prompt = job['scraper_job_type']['configuration']['prompt']
         if isinstance(schema, str):
             schema = json.loads(schema)
 
-        query = self.llm.generate_query(prompt, schema)
+        print("komt in extract_data")
 
-        return page.query_data(query)
+        full_prompt = f"""
+            HISTORICAL ERROR CONTEXT TO AVOID:
+            {historical_context}
+            
+            ACTUAL EXTRACTION TASK:
+            {prompt}
+        """
+
+        token_info = {
+            'prompt': 1250,
+            'completion': 150,
+            'total': 1400
+        }
+
+        query = self.llm.generate_query(prompt, schema)
+        extracted = page.query_data(query)
+
+        return extracted, token_info
     
     def report_job_status(self, job_id, status, results=None, confidence=0, screenshot=None):
         safe_results = results if results is not None else []
@@ -221,6 +270,28 @@ class JobProcessor:
             print(json.dumps(response.json(), indent=4))
         else:
             print(f"Scraper job {job_id} could not be saved")
+
+    def log_experiment_to_laravel(self, exp_code, workload, job_id, res_time, tokens, status):
+        payload = {
+            "experiment_code": exp_code,
+            "workload": workload,
+            "scraper_job_id": job_id,
+            "response_time_ms": res_time,
+            "prompt_tokens": tokens['prompt'],
+            "completion_tokens": tokens['completion'],
+            "total_tokens": tokens['total'],
+            "validation_status": status
+        }
+        try:
+            res = requests.post(f"{self.api_url}/experiment-logs", json=payload, headers=self.headers)
+            print("\n")
+            print(json.dumps(res, indent=4))
+
+            if res.status_code == 201:
+                print("Experiment metrics successfully logged to Laravel!")
+        except Exception as e:
+            print(f"Could not log metrics: {e}")
+
 
     def test_setting(self, job):
         screenshot_base64 = None
@@ -248,3 +319,26 @@ class JobProcessor:
                 print(f"Not able to make a screenshot of the page: {pic_e}")
         
         # self.report_job_status(job_id, "FAILED", None, 0, screenshot_base64)
+
+    def log_experiment_to_laravel(self, job_id, exp_meta, res_time, tokens, status):
+        endpoint = f"{self.api_url}/experiment-logs"
+
+        payload = {
+            "experiment_code": exp_meta['code'],
+            "workload": exp_meta['workload'],
+            "scraper_job_id": job_id,
+            "response_time_ms": res_time,
+            "prompt_tokens": tokens['prompt_tokens'],
+            "completion_tokens": tokens['completion_tokens'],
+            "total_tokens": tokens['total_tokens'],
+            "validation_status": status
+        }
+
+        try:
+            response = requests.post(endpoint, json=payload, headers=self.headers)
+            if response.status_code == 201:
+                print("Metrics stored in the database")
+            else:
+                print(f"Couldnt save metrics {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"Network error while saving: {e}")

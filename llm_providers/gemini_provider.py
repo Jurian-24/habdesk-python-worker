@@ -49,8 +49,9 @@ class GeminiProvider(BaseLLM):
                     2. Try to map your extraction to the keys in the SUGGESTED TARGET SCHEMA if they match the instruction.
                     3. If the schema is completely irrelevant to the instruction (e.g. instruction asks for 'title' but schema has 'month'), IGNORE THE SCHEMA and use highly descriptive field names that AgentQL can use to find the actual elements requested in the instruction.
                 """
+
                 response = self.client.models.generate_content(
-                    model="gemini-3-flash-preview",
+                    model="	gemini-3.1-pro-preview",
                     contents=dynamic_prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=instructions,
@@ -59,15 +60,24 @@ class GeminiProvider(BaseLLM):
                 )
                 
                 query = response.text.strip()
+                print(query)
+                exit()
                 if query.startswith("```"):
                     query = query.split("\n", 1)[1].rsplit("\n", 1)[0]
                 
                 query = query.strip('\'"')
+               
                 
                 query = query.replace('\n', ' ').replace('\r', '')
                 query = " ".join(query.split())
                 
-                return query
+                token_info = {
+                    "prompt_tokens": response.usage_metadata.prompt_token_count,
+                    "completion_tokens": response.usage_metadata.candidates_token_count,
+                    "total_tokens": response.usage_metadata.total_token_count
+                }
+                
+                return query, token_info
 
             except Exception as e:
                 error_str = str(e).lower()
