@@ -51,25 +51,15 @@ class GeminiProvider(BaseLLM):
                 """
 
                 response = self.client.models.generate_content(
-                    model="	gemini-3.1-pro-preview",
+                    model="gemini-3.1-pro-preview",
                     contents=dynamic_prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=instructions,
                         temperature=0.1
                     )
                 )
-                
-                query = response.text.strip()
-                print(query)
-                exit()
-                if query.startswith("```"):
-                    query = query.split("\n", 1)[1].rsplit("\n", 1)[0]
-                
-                query = query.strip('\'"')
-               
-                
-                query = query.replace('\n', ' ').replace('\r', '')
-                query = " ".join(query.split())
+
+                query = self._serialize_query(response.text.strip())
                 
                 token_info = {
                     "prompt_tokens": response.usage_metadata.prompt_token_count,
@@ -103,3 +93,25 @@ class GeminiProvider(BaseLLM):
             2. Make the new prompt highly specific so it strictly extracts the data requested.
             3. Ensure the new prompt considers the human feedback explicitly to avoid repeating the mistake.
         """
+
+    def _serialize_query(self, query):
+        # print(type(query))
+        # print(query)
+        if query.startswith("```"):
+            try:
+                print("1")
+                query = query.split("\n", 1)[1].rsplit("\n", 1)[0]
+                print("2")
+
+                query = query.strip('\'"')
+                print("3")
+                
+                
+                print("4")
+                query = query.replace('\n', ' ').replace('\r', '')
+
+                query = " ".join(query.split())
+            except Exception as e:
+                print(e)
+                
+        return query

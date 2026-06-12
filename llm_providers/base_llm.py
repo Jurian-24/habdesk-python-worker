@@ -33,7 +33,10 @@ class BaseLLM(ABC):
     @abstractmethod
     def optimize_failed_prompt(self, old_prompt: str, target_schema: dict, human_feedback: str, failed_output: str):
         pass
-
+    
+    @abstractmethod
+    def _serialize_query(self, query: str):
+        pass
 
     def calculate_confidence(self, schema, results):
         if not schema or not results:

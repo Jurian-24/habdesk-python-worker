@@ -23,7 +23,7 @@ class JobProcessor:
             "Content-Type": "application/json"
         }
 
-        self.llm = OllamaProvider()
+        self.llm = GeminiProvider()
 
     def calculate_confidence(self, schema, results):
         if not schema or not results:
@@ -98,7 +98,7 @@ class JobProcessor:
         try:
             start_time = time.time()
 
-            with sync_playwright() as playwright, playwright.chromium.launch(headless=False) as browser:
+            with sync_playwright() as playwright, playwright.chromium.launch(headless=True) as browser:
                 page = agentql.wrap(browser.new_page())
 
                 try:
@@ -107,8 +107,6 @@ class JobProcessor:
                     # start timing for the response
                     start_time = time.time()
                     
-                    end_time = time.time()
-                    response_time_ms = int(end_time - start_time * 1000)
 
                     # start the extraction with agentql
                     extracted_data, token_info = self.extract_data(page, job, exp_meta['context'])
@@ -122,6 +120,10 @@ class JobProcessor:
                     validation_status = "APPROVED" if confidence_score > 70 else "REJECTED"
                     # if confidence_score == 0:
                     #     raise Exception(f"Confidence score is 0. Page probably doesnt exist")
+
+                    end_time = time.time()
+                    response_time_ms = int((end_time - start_time) * 1000)
+                    
                     self.send_metrics_to_laravel(
                         job_id=job_id,
                         exp_meta=exp_meta,
@@ -129,16 +131,8 @@ class JobProcessor:
                         tokens=token_info,
                         status=validation_status
                     )
-                    self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
 
-                    self.log_experiment_to_laravel(
-                        exp_code=exp_meta['code'],
-                        workload=exp_meta['workload'],
-                        job_id=job_id,
-                        res_time=response_time_ms,
-                        tokens=token_info,
-                        status=validation_status
-                    )
+                    self.report_job_status(job_id, "COMPLETED", extracted_data, confidence_score)
                 except Exception as inner_e:
                     print(f"Something went wrong while trying to scrape the site: {inner_e}")
 
@@ -234,14 +228,8 @@ class JobProcessor:
             ACTUAL EXTRACTION TASK:
             {prompt}
         """
+        query, token_info = self.llm.generate_query(prompt, schema)
 
-        token_info = {
-            'prompt': 1250,
-            'completion': 150,
-            'total': 1400
-        }
-
-        query = self.llm.generate_query(prompt, schema)
         extracted = page.query_data(query)
 
         return extracted, token_info
@@ -271,28 +259,6 @@ class JobProcessor:
         else:
             print(f"Scraper job {job_id} could not be saved")
 
-    def log_experiment_to_laravel(self, exp_code, workload, job_id, res_time, tokens, status):
-        payload = {
-            "experiment_code": exp_code,
-            "workload": workload,
-            "scraper_job_id": job_id,
-            "response_time_ms": res_time,
-            "prompt_tokens": tokens['prompt'],
-            "completion_tokens": tokens['completion'],
-            "total_tokens": tokens['total'],
-            "validation_status": status
-        }
-        try:
-            res = requests.post(f"{self.api_url}/experiment-logs", json=payload, headers=self.headers)
-            print("\n")
-            print(json.dumps(res, indent=4))
-
-            if res.status_code == 201:
-                print("Experiment metrics successfully logged to Laravel!")
-        except Exception as e:
-            print(f"Could not log metrics: {e}")
-
-
     def test_setting(self, job):
         screenshot_base64 = None
 
@@ -320,7 +286,7 @@ class JobProcessor:
         
         # self.report_job_status(job_id, "FAILED", None, 0, screenshot_base64)
 
-    def log_experiment_to_laravel(self, job_id, exp_meta, res_time, tokens, status):
+    def send_metrics_to_laravel(self, job_id, exp_meta, res_time, tokens, status):
         endpoint = f"{self.api_url}/experiment-logs"
 
         payload = {
